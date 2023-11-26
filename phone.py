@@ -43,25 +43,25 @@ AUDIOFILES = {
 
 #################################### INIT ######################################
 
-record_process = None  # handle 'arecord' subprocess popen object to keep track of it
-menu = None  # dynamically takes reference of any menu to be executed in runtime
+record_process = None  # receives 'arecord' subprocess popen object to keep track of it
+menu = None  # dynamically takes reference to any menu to be executed in runtime
 
 exit_code = ""  # current state of exit code
 EXITCODE = "9889"  # state to be reached by 'exit_code' to trigger program exit
-EXITCODE_VELOCITY = 1  # time in seconds between two keystrokes to type exit code
+EXITCODE_VELOCITY = 1  # max duration between two keystrokes to type exit code (seconds)
 
 # duration to sleep after any keystroke to mitigate rebound effect (seconds)
-MITIGATE_REBOUND = 0.01
+BOUNCETIME = 0.01
 
 ################################# FUNCTIONS ####################################
 
 
 def working():
-    return GPIO.input(23) == 0
+    return GPIO.input(PICKUP_BUTTON) == 0
 
 
 def sleeping():
-    return GPIO.input(23) != 0
+    return GPIO.input(PICKUP_BUTTON) != 0
 
 
 def clean_audio_queue():
@@ -107,6 +107,7 @@ def set_exit_code(key):
     signal.alarm(EXITCODE_VELOCITY)
     exit_code += mykey
     if exit_code == EXITCODE:
+        GPIO.cleanup()
         os.system("pkill -f " + sys.argv[0])
 
 
@@ -272,7 +273,7 @@ def main_menu(key):
 def phone_off():
     while sleeping():
         sleep(0.15)
-    sleep(MITIGATE_REBOUND)
+    sleep(BOUNCETIME)
 
 
 def phone_on():
@@ -301,7 +302,7 @@ def phone_on():
         sleep(0.1)
 
     stop_all()
-    sleep(MITIGATE_REBOUND)
+    sleep(BOUNCETIME)
 
 
 def main_loop():
@@ -310,4 +311,7 @@ def main_loop():
         phone_on()
 
 
-main_loop()
+try:
+    main_loop()
+except KeyboardInterrupt:
+    GPIO.cleanup()
