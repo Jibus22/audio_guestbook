@@ -9,6 +9,7 @@ import board
 import random
 import pygame.mixer as mixer
 from itertools import chain
+import signal
 
 ################################## BOARD INIT ##################################
 
@@ -19,7 +20,7 @@ GPIO.setup(PICKUP_BUTTON, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 cols = [digitalio.DigitalInOut(x) for x in (board.D16, board.D26, board.D6)]
 rows = [digitalio.DigitalInOut(x) for x in (board.D5, board.D22, board.D27, board.D17)]
 keys = ((1, 2, 3), (4, 5, 6), (7, 8, 9), ("*", 0, "#"))
-flattened_keys = list(tuple(chain.from_iterable(keys)))
+flattened_keys = list(chain.from_iterable(keys))
 keypad = adafruit_matrixkeypad.Matrix_Keypad(rows, cols, keys)
 
 ############################## AUDIO MIXER INIT ################################
@@ -39,6 +40,8 @@ AUDIOFILES = {
     "audio3": "audio_files/audio3.wav",
     "audio31": "audio_files/audio31.wav",
 }
+
+menu = None
 
 ################################# FUNCTIONS ####################################
 
@@ -64,6 +67,7 @@ def stop_audio():
 def stop_record():
     global record_process
     if record_process is not None and record_process.poll() is None:
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         record_process.terminate()
 
     record_process = None
@@ -98,15 +102,15 @@ def audio_queue_handler():
         audio_channel.queue(audio_queue.pop(0))
 
 
-def audio_process_handler(key):
-    """
-    Stop any current record and clean queue if the user had pressed a registered key
-    """
-    if len(key) == 0:
+def record_limit_handler(signum, frame):
+    if record_process is None:
         return
-    if key[0] in flattened_keys:
-        clean_audio_queue()
-        stop_record()
+
+    global menu
+    global record_process
+    menu = main_menu
+    record_process = None
+    play_audio("endrecord")
 
 
 def start_recording():
@@ -116,6 +120,7 @@ def start_recording():
     """
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     record_filename = os.path.join(RECORDDIRECTORY, f"{timestamp}.wav")
+    signal.signal(signal.SIGCHLD, record_limit_handler)
     global record_process
     record_process = subprocess.Popen(
         [
@@ -158,39 +163,111 @@ def play_audio(*audio):
             audio_channel.play(mixer.Sound(audiofiles[0]))
             audio_channel.queue(mixer.Sound(audiofiles[1]))
         case _:
+            clean_audio_queue()
             audio_channel.play(mixer.Sound(audiofiles[0]))
             audio_channel.queue(mixer.Sound(audiofiles[1]))
             for i in range(2, audio_nb):
                 audio_queue.append(mixer.Sound(audiofiles[i]))
 
 
+#################################### MENUS #####################################
+
+
+def menu31(key):
+    match key:
+        case 1:
+            play_audio("audio31a")
+        case 2:
+            play_audio("audio31b")
+
+
+def menu32(key):
+    match key:
+        case 1:
+            play_audio("audio32a")
+        case 2:
+            play_audio("audio32b")
+
+
+def menu33(key):
+    match key:
+        case 1:
+            play_audio("audio33a")
+        case 2:
+            play_audio("audio33b")
+
+
+def secondary_menu(key):
+    global menu
+    match key:
+        case 1:
+            play_audio("audio31")
+            menu = menu31
+        case 2:
+            play_audio("audio32")
+            menu = menu32
+        case 3:
+            play_audio("audio33")
+            menu = menu33
+
+
+def empty_menu(key):
+    pass
+
+
+def main_menu(key):
+    global menu
+    match key:
+        case 1:
+            play_audio("beep")
+            start_recording()
+            menu = empty_menu
+        case 2:
+            play_audio("prerandom", "beep", get_random_audio())
+        case 3:
+            play_audio("audio3")
+            menu = secondary_menu
+
+
 ################################## MAIN LOOP ###################################
 
-while True:
+
+def phone_off():
     while sleeping():
         sleep(0.1)
 
+
+def phone_on():
+    global menu
+    menu = main_menu
     play_audio("accueil", "menu")
 
     while working():
-        key = keypad.pressed_keys
+        pressed_keys = keypad.pressed_keys
         audio_queue_handler()
-        audio_process_handler(key)
 
-        if 0 in key:
-            play_audio("menu")
-        elif 1 in key:
-            play_audio("beep")
-            start_recording()
-        elif 2 in key:
-            play_audio("prerandom", "beep", get_random_audio())
-        elif 3 in key:
-            play_audio("audio3")
-        elif 4 in key:
-            play_audio("audio31")
-        elif 5 in key:
-            play_audio("audio31")
+        if len(pressed_keys) == 0:
+            sleep(0.05)
+            continue
+
+        key = pressed_keys[0]
+        match key:
+            case 0:
+                menu = main_menu
+                stop_record()
+                play_audio("menu")
+            case _:
+                menu(key[0])
 
         sleep(0.1)
 
     stop_all()
+
+
+def main_loop():
+    while True:
+        phone_off()
+        phone_on()
+
+
+main_loop()
