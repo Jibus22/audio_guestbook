@@ -8,28 +8,12 @@ import digitalio
 import board
 import random
 import pygame.mixer as mixer
-from itertools import chain
 import signal
 import sys
 
-################################## BOARD INIT ##################################
+############################### CONSTANT VARIABLES #############################
 
 PICKUP_BUTTON = 23
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(PICKUP_BUTTON, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-cols = [digitalio.DigitalInOut(x) for x in (board.D16, board.D26, board.D6)]
-rows = [digitalio.DigitalInOut(x) for x in (board.D5, board.D22, board.D27, board.D17)]
-keys = ((1, 2, 3), (4, 5, 6), (7, 8, 9), ("*", 0, "#"))
-flattened_keys = list(chain.from_iterable(keys))
-keypad = adafruit_matrixkeypad.Matrix_Keypad(rows, cols, keys)
-
-############################## AUDIO MIXER INIT ################################
-
-mixer.init(frequency=44100, channels=1, buffer=4096)
-audio_channel = mixer.Channel(0)
-audio_queue = []
-
 RECORDDIRECTORY = "record"
 TIMEMAXREC = 60  # maximum recording time (sec)
 AUDIOFILES = {
@@ -40,18 +24,31 @@ AUDIOFILES = {
     "audio3": "audio_files/audio3.wav",
     "audio31": "audio_files/audio31.wav",
 }
-
-#################################### INIT ######################################
-
-record_process = None  # receives 'arecord' subprocess popen object to keep track of it
-menu = None  # dynamically takes reference to any menu to be executed in runtime
-
-exit_code = ""  # current state of exit code
 EXITCODE = "9889"  # state to be reached by 'exit_code' to trigger program exit
 EXITCODE_VELOCITY = 1  # max duration between two keystrokes to type exit code (seconds)
-
 # duration to sleep after any keystroke to mitigate rebound effect (seconds)
 BOUNCETIME = 0.01
+
+############################### MUTABLE VARIABLES ##############################
+
+# homemade audio queue to extends the limited one from pygame.mixer.Channel
+audio_queue = []
+arecord_proc = None  # receives 'arecord' subprocess popen object to keep track of it
+phone_menu = None  # dynamically takes reference to any menu to be executed in runtime
+phone_exit_code = ""  # current state of phone exit code
+
+############################### INITIALISATION #################################
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(PICKUP_BUTTON, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+cols = [digitalio.DigitalInOut(x) for x in (board.D16, board.D26, board.D6)]
+rows = [digitalio.DigitalInOut(x) for x in (board.D5, board.D22, board.D27, board.D17)]
+keys = [[1, 2, 3], [4, 5, 6], [7, 8, 9], ["*", 0, "#"]]
+keypad = adafruit_matrixkeypad.Matrix_Keypad(rows, cols, keys)
+
+mixer.init(frequency=44100, channels=1, buffer=4096)
+audio_channel = mixer.Channel(0)
 
 ################################# FUNCTIONS ####################################
 
@@ -75,12 +72,12 @@ def stop_audio():
 
 
 def stop_record():
-    global record_process
-    if record_process is not None and record_process.poll() is None:
+    global arecord_proc
+    if arecord_proc is not None and arecord_proc.poll() is None:
         signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-        record_process.terminate()
+        arecord_proc.terminate()
 
-    record_process = None
+    arecord_proc = None
 
 
 def stop_all():
@@ -90,23 +87,23 @@ def stop_all():
 
 
 def exit_code_velocity_handler(signum, frame):
-    global exit_code
-    exit_code = ""
+    global phone_exit_code
+    phone_exit_code = ""
 
 
 def set_exit_code(key):
-    global exit_code
+    global phone_exit_code
     mykey = str(key)
 
     if EXITCODE.find(mykey) == -1:
         signal.alarm(0)
-        exit_code = ""
+        phone_exit_code = ""
         return
 
     signal.signal(signal.SIGALRM, exit_code_velocity_handler)
     signal.alarm(EXITCODE_VELOCITY)
-    exit_code += mykey
-    if exit_code == EXITCODE:
+    phone_exit_code += mykey
+    if phone_exit_code == EXITCODE:
         GPIO.cleanup()
         os.system("pkill -f " + sys.argv[0])
 
@@ -140,14 +137,14 @@ def record_limit_handler(signum, frame):
     record_process variable, send user back to main menu and audio announcing
     end of recording
     """
-    if record_process is None:
+    if arecord_proc is None:
         return
 
     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-    global menu
-    global record_process
-    menu = main_menu
-    record_process = None
+    global phone_menu
+    global arecord_proc
+    phone_menu = main_menu
+    arecord_proc = None
     play_audio("endrecord")
 
 
@@ -159,8 +156,8 @@ def start_recording():
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     record_filename = os.path.join(RECORDDIRECTORY, f"{timestamp}.wav")
     signal.signal(signal.SIGCHLD, record_limit_handler)
-    global record_process
-    record_process = subprocess.Popen(
+    global arecord_proc
+    arecord_proc = subprocess.Popen(
         [
             "arecord",
             "-f",
@@ -236,17 +233,17 @@ def menu33(key):
 
 
 def secondary_menu(key):
-    global menu
+    global phone_menu
     match key:
         case 1:
             play_audio("audio31")
-            menu = menu31
+            phone_menu = menu31
         case 2:
             play_audio("audio32")
-            menu = menu32
+            phone_menu = menu32
         case 3:
             play_audio("audio33")
-            menu = menu33
+            phone_menu = menu33
 
 
 def empty_menu(key):
@@ -254,31 +251,35 @@ def empty_menu(key):
 
 
 def main_menu(key):
-    global menu
+    global phone_menu
     match key:
         case 1:
             play_audio("beep")
             start_recording()
-            menu = empty_menu
+            phone_menu = empty_menu
         case 2:
             play_audio("prerandom", "beep", get_random_audio())
         case 3:
             play_audio("audio3")
-            menu = secondary_menu
+            phone_menu = secondary_menu
 
 
-################################## MAIN LOOP ###################################
+############################## MAIN LOOP FUNCTIONS #############################
 
 
 def phone_off():
-    while sleeping():
-        sleep(0.15)
+    if sleeping() is False:
+        return
+    GPIO.wait_for_edge(PICKUP_BUTTON, GPIO.FALLING)
     sleep(BOUNCETIME)
 
 
 def phone_on():
-    global menu
-    menu = main_menu
+    if working() is False:
+        return
+
+    global phone_menu
+    phone_menu = main_menu
     play_audio("accueil", "menu")
 
     while working():
@@ -293,11 +294,11 @@ def phone_on():
         set_exit_code(key)
         match key:
             case 0:
-                menu = main_menu
+                phone_menu = main_menu
                 stop_record()
                 play_audio("menu")
             case _:
-                menu(key[0])
+                phone_menu(key[0])
 
         sleep(0.1)
 
@@ -310,6 +311,8 @@ def main_loop():
         phone_off()
         phone_on()
 
+
+################################## MAIN LOOP ###################################
 
 try:
     main_loop()
