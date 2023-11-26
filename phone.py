@@ -10,6 +10,7 @@ import random
 import pygame.mixer as mixer
 from itertools import chain
 import signal
+import sys
 
 ################################## BOARD INIT ##################################
 
@@ -28,7 +29,6 @@ keypad = adafruit_matrixkeypad.Matrix_Keypad(rows, cols, keys)
 mixer.init(frequency=44100, channels=1, buffer=4096)
 audio_channel = mixer.Channel(0)
 audio_queue = []
-record_process = None
 
 RECORDDIRECTORY = "record"
 TIMEMAXREC = 60  # maximum recording time (sec)
@@ -41,7 +41,17 @@ AUDIOFILES = {
     "audio31": "audio_files/audio31.wav",
 }
 
-menu = None
+#################################### INIT ######################################
+
+record_process = None  # handle 'arecord' subprocess popen object to keep track of it
+menu = None  # dynamically takes reference of any menu to be executed in runtime
+
+exit_code = ""  # current state of exit code
+EXITCODE = "9889"  # state to be reached by 'exit_code' to trigger program exit
+EXITCODE_VELOCITY = 1  # time in seconds between two keystrokes to type exit code
+
+# duration to sleep after any keystroke to mitigate rebound effect (seconds)
+MITIGATE_REBOUND = 0.01
 
 ################################# FUNCTIONS ####################################
 
@@ -79,6 +89,27 @@ def stop_all():
     stop_record()
 
 
+def exit_code_velocity_handler(signum, frame):
+    global exit_code
+    exit_code = ""
+
+
+def set_exit_code(key):
+    global exit_code
+    mykey = str(key)
+
+    if EXITCODE.find(mykey) == -1:
+        signal.alarm(0)
+        exit_code = ""
+        return
+
+    signal.signal(signal.SIGALRM, exit_code_velocity_handler)
+    signal.alarm(EXITCODE_VELOCITY)
+    exit_code += mykey
+    if exit_code == EXITCODE:
+        os.system("pkill -f " + sys.argv[0])
+
+
 def get_random_audio():
     """
     Looks for ".wav" files in RECORDDIRECTORY and randomly return one or None
@@ -103,9 +134,15 @@ def audio_queue_handler():
 
 
 def record_limit_handler(signum, frame):
+    """
+    SIGCHLD handler, triggered when 60 sec of recording had elapsed, to reset
+    record_process variable, send user back to main menu and audio announcing
+    end of recording
+    """
     if record_process is None:
         return
 
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     global menu
     global record_process
     menu = main_menu
@@ -234,7 +271,8 @@ def main_menu(key):
 
 def phone_off():
     while sleeping():
-        sleep(0.1)
+        sleep(0.15)
+    sleep(MITIGATE_REBOUND)
 
 
 def phone_on():
@@ -251,6 +289,7 @@ def phone_on():
             continue
 
         key = pressed_keys[0]
+        set_exit_code(key)
         match key:
             case 0:
                 menu = main_menu
@@ -262,6 +301,7 @@ def phone_on():
         sleep(0.1)
 
     stop_all()
+    sleep(MITIGATE_REBOUND)
 
 
 def main_loop():
