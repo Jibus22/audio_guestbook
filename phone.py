@@ -137,12 +137,12 @@ def record_limit_handler(signum, frame):
     record_process variable, send user back to main menu and audio announcing
     end of recording
     """
+    global arecord_proc
     if arecord_proc is None:
         return
 
     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     global phone_menu
-    global arecord_proc
     phone_menu = main_menu
     arecord_proc = None
     play_audio("endrecord")
@@ -267,21 +267,9 @@ def main_menu(key):
 ############################## MAIN LOOP FUNCTIONS #############################
 
 
-def phone_off():
-    if sleeping() is False:
-        return
-    GPIO.wait_for_edge(PICKUP_BUTTON, GPIO.FALLING)
-    sleep(BOUNCETIME)
-
-
-def phone_on():
-    if working() is False:
-        return
-
+def keypad_polling():
     global phone_menu
     phone_menu = main_menu
-    play_audio("accueil", "menu")
-
     while working():
         pressed_keys = keypad.pressed_keys
         audio_queue_handler()
@@ -298,9 +286,24 @@ def phone_on():
                 stop_record()
                 play_audio("menu")
             case _:
-                phone_menu(key[0])
+                phone_menu(key)
 
         sleep(0.1)
+
+
+def phone_off():
+    if sleeping() is False:
+        return
+    GPIO.wait_for_edge(PICKUP_BUTTON, GPIO.FALLING)
+    sleep(BOUNCETIME)
+
+
+def phone_on():
+    if working() is False:
+        return
+
+    play_audio("accueil", "menu")
+    keypad_polling()
 
     stop_all()
     sleep(BOUNCETIME)
