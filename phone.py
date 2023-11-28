@@ -9,7 +9,6 @@ import board
 import random
 import pygame.mixer as mixer
 import signal
-import sys
 
 ############################### CONSTANT VARIABLES #############################
 
@@ -27,7 +26,8 @@ AUDIOFILES = {
 EXITCODE = "9889"  # state to be reached by 'exit_code' to trigger program exit
 EXITCODE_VELOCITY = 1  # max duration between two keystrokes to type exit code (seconds)
 # duration to sleep after any keystroke to mitigate rebound effect (seconds)
-BOUNCETIME = 0.01
+BOUNCETIME = 0.15
+POLLING_PERIOD = 0.08  # duration to sleep between two loop cycle (seconds)
 
 ############################### MUTABLE VARIABLES ##############################
 
@@ -37,7 +37,7 @@ arecord_proc = None  # receives 'arecord' subprocess popen object to keep track 
 phone_menu = None  # dynamically takes reference to any menu to be executed in runtime
 phone_exit_code = ""  # current state of phone exit code
 
-############################### INITIALISATION #################################
+############################### INITIALIZATION #################################
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(PICKUP_BUTTON, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -103,9 +103,10 @@ def set_exit_code(key):
     signal.signal(signal.SIGALRM, exit_code_velocity_handler)
     signal.alarm(EXITCODE_VELOCITY)
     phone_exit_code += mykey
+    print(f"exitcode: {phone_exit_code}")
     if phone_exit_code == EXITCODE:
-        GPIO.cleanup()
-        os.system("pkill -f " + sys.argv[0])
+        subprocess.Popen("sleep 2 && sudo shutdown --poweroff", shell=True)
+        raise SystemExit
 
 
 def get_random_audio():
@@ -270,12 +271,13 @@ def main_menu(key):
 def keypad_polling():
     global phone_menu
     phone_menu = main_menu
+
     while working():
         pressed_keys = keypad.pressed_keys
         audio_queue_handler()
 
         if len(pressed_keys) == 0:
-            sleep(0.05)
+            sleep(POLLING_PERIOD)
             continue
 
         key = pressed_keys[0]
@@ -288,7 +290,7 @@ def keypad_polling():
             case _:
                 phone_menu(key)
 
-        sleep(0.1)
+        sleep(POLLING_PERIOD + BOUNCETIME)
 
 
 def phone_off():
@@ -319,5 +321,9 @@ def main_loop():
 
 try:
     main_loop()
-except KeyboardInterrupt:
+finally:
+    print("[debug] - finally statement")
+    if arecord_proc is not None and arecord_proc.poll() is None:
+        arecord_proc.terminate()
+    mixer.quit()
     GPIO.cleanup()
