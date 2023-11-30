@@ -13,20 +13,23 @@ import signal
 ############################### CONSTANT VARIABLES #############################
 
 PICKUP_BUTTON = 23
-RECORDDIRECTORY = "record"
 TIMEMAXREC = 60  # maximum recording time (sec)
+
+BASEDIRECTORY = "/home/rasphone/share"
+RECORDDIRECTORY = f"{BASEDIRECTORY}/record"
+AUDIODIRECTORY = f"{BASEDIRECTORY}/audio_files"
 AUDIOFILES = {
-    "accueil": "audio_files/accueil.wav",
-    "menu": "audio_files/menu.wav",
-    "beep": "audio_files/beep.wav",
-    "prerandom": "audio_files/prerandom.wav",
-    "audio3": "audio_files/audio3.wav",
-    "audio31": "audio_files/audio31.wav",
+    "accueil": f"{AUDIODIRECTORY}/accueil.wav",
+    "menu": f"{AUDIODIRECTORY}/menu.wav",
+    "beep": f"{AUDIODIRECTORY}/beep.wav",
+    "prerandom": f"{AUDIODIRECTORY}/prerandom.wav",
+    "audio3": f"{AUDIODIRECTORY}/audio3.wav",
+    "audio31": f"{AUDIODIRECTORY}/audio31.wav",
 }
 EXITCODE = "9889"  # state to be reached by 'exit_code' to trigger program exit
 EXITCODE_VELOCITY = 1  # max duration between two keystrokes to type exit code (seconds)
 # duration to sleep after any keystroke to mitigate rebound effect (seconds)
-BOUNCETIME = 0.15
+BOUNCETIME = 0.35
 POLLING_PERIOD = 0.08  # duration to sleep between two loop cycle (seconds)
 
 ############################### MUTABLE VARIABLES ##############################
@@ -321,6 +324,8 @@ def main_loop():
 
 try:
     main_loop()
+except KeyboardInterrupt:
+    print("Interrupted by user")
 finally:
     print("[debug] - finally statement")
     if arecord_proc is not None and arecord_proc.poll() is None:
