@@ -1,0 +1,12 @@
+[Unit]
+Description=audio guestbook script systemd service.
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/rasphone/share/rasphone.py
+Restart=on-failure
+RestartSec=5s
+ExecStopPost=/sbin/halt
+
+[Install]
+WantedBy=multi-user.target

@@ -108,7 +108,6 @@ def set_exit_code(key):
     phone_exit_code += mykey
     print(f"exitcode: {phone_exit_code}")
     if phone_exit_code == EXITCODE:
-        subprocess.Popen("sleep 2 && sudo shutdown --poweroff", shell=True)
         raise SystemExit
 
 
@@ -325,10 +324,10 @@ def main_loop():
 try:
     main_loop()
 except KeyboardInterrupt:
-    print("Interrupted by user")
+    print("interrupted by user")
 finally:
-    print("[debug] - finally statement")
     if arecord_proc is not None and arecord_proc.poll() is None:
         arecord_proc.terminate()
     mixer.quit()
     GPIO.cleanup()
+    print("rasphone exiting")
